@@ -4,9 +4,12 @@ import re
 from typing import Optional
 
 from aiogram import Bot, Dispatcher, Router
+from aiogram.types import FSInputFile
 
 from download_service import DownloadService
 from storage import Storage
+
+from handlers import *
 
 
 def parse_admins(value: Optional[str]) -> list[int]:
@@ -26,11 +29,10 @@ async def main():
     admins = parse_admins(admin_user_ids)
     storage = Storage(db_path)
     bot = Bot(token=bot_token)
+    install_admin_mirroring(bot, admins)
     dp = Dispatcher()
     router = Router()
     service = DownloadService(bot, storage)
-
-    from handlers import register_message_handlers
 
     register_message_handlers(router, service, storage, admins)
 
