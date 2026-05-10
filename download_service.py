@@ -5,8 +5,10 @@ import re
 import shutil
 import tempfile
 import json
+import uuid
 from asyncio.subprocess import DEVNULL, PIPE
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 from aiogram import Bot
@@ -126,7 +128,8 @@ class DownloadService:
 
     async def _process(self, entry: DownloadEntry):
         entry.workdir = tempfile.mkdtemp(prefix="ytdlp_")
-        output_template = os.path.join(entry.workdir, "%(title)s.%(ext)s")
+        generated_stem = self._build_generated_stem(entry)
+        output_template = os.path.join(entry.workdir, f"{generated_stem}.%(ext)s")
         args = [YT_DLP, "--no-playlist", "--newline", "-o", output_template]
         if entry.fmt in ("mp3", "audio"):
             args += ["-x", "--audio-format", "mp3"]
@@ -137,10 +140,11 @@ class DownloadService:
         status_message = await self._safe_reply(entry.chat_id, "⏳ Download started: 0%")
         status_message_id = status_message.message_id if status_message else None
         logger.info(
-            "Running yt-dlp: chat_id=%s fmt=%s format_id=%s",
+            "Running yt-dlp: chat_id=%s fmt=%s format_id=%s output_stem=%s",
             entry.chat_id,
             entry.fmt,
             entry.format_id,
+            generated_stem,
         )
 
         proc = await asyncio.create_subprocess_exec(*args, stdout=DEVNULL, stderr=PIPE)
@@ -245,6 +249,12 @@ class DownloadService:
             return min(100.0, max(0.0, float(match.group(1))))
         except ValueError:
             return None
+
+    def _build_generated_stem(self, entry: DownloadEntry) -> str:
+        prefix = "audio" if entry.fmt in ("mp3", "audio") else "video"
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        token = uuid.uuid4().hex[:8]
+        return f"{prefix}_{timestamp}_{token}"
 
     async def _safe_reply(self, chat_id: int, text: str) -> Optional[Message]:
         try:
