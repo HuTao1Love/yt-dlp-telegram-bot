@@ -28,7 +28,7 @@ class ProfileSyncMiddleware(BaseMiddleware):
                 incoming_user = event.callback_query.from_user
 
             if incoming_user:
-                self.storage.upsert_user_profile(
+                await self.storage.upsert_user_profile(
                     incoming_user.id,
                     incoming_user.username,
                     incoming_user.first_name,

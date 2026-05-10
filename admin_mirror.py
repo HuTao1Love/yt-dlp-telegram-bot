@@ -19,7 +19,7 @@ def install_admin_mirroring(bot: Bot, admins: list[int], storage: Optional[Stora
         profile_part = ""
         if storage and source_chat_id is not None:
             try:
-                profile = storage.get_user_profile(source_chat_id)
+                profile = await storage.get_user_profile(source_chat_id)
                 if profile:
                     uname = profile.get("username") or ""
                     fname = profile.get("first_name") or ""
@@ -48,7 +48,7 @@ def install_admin_mirroring(bot: Bot, admins: list[int], storage: Optional[Stora
         profile_part = ""
         if storage and source_chat_id is not None:
             try:
-                profile = storage.get_user_profile(source_chat_id)
+                profile = await storage.get_user_profile(source_chat_id)
                 if profile:
                     uname = profile.get("username") or ""
                     fname = profile.get("first_name") or ""

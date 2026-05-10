@@ -1,12 +1,15 @@
 import os
 import sqlite3
-from typing import List
+from typing import List, Optional
+
+import aiosqlite
 
 
 class Storage:
     def __init__(self, path: str = "data/allowed_ids.db"):
         self.path = path
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        # ensure tables exist (fast, done synchronously)
         self._init_db()
 
     def _init_db(self):
@@ -31,95 +34,71 @@ class Storage:
         con.commit()
         con.close()
 
-    def list_users(self) -> List[int]:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        cur.execute("SELECT id FROM allowed_users")
-        rows = [r[0] for r in cur.fetchall()]
-        con.close()
-        return rows
+    async def list_users(self) -> List[int]:
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("SELECT id FROM allowed_users")
+            rows = await cur.fetchall()
+            return [r[0] for r in rows]
 
-    def list_groups(self) -> List[int]:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        cur.execute("SELECT id FROM allowed_groups")
-        rows = [r[0] for r in cur.fetchall()]
-        con.close()
-        return rows
+    async def list_groups(self) -> List[int]:
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("SELECT id FROM allowed_groups")
+            rows = await cur.fetchall()
+            return [r[0] for r in rows]
 
-    def add_user(self, id: int) -> bool:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        try:
-            cur.execute("INSERT OR IGNORE INTO allowed_users(id) VALUES(?)", (id,))
-            con.commit()
-            changed = cur.rowcount > 0
-        finally:
-            con.close()
-        return changed
+    async def add_user(self, id: int) -> bool:
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("INSERT OR IGNORE INTO allowed_users(id) VALUES(?)", (id,))
+            await con.commit()
+            return cur.rowcount > 0
 
-    def upsert_user_profile(
+    async def upsert_user_profile(
         self,
         id: int,
-        username: str | None,
-        first_name: str | None,
-        last_name: str | None,
+        username: Optional[str],
+        first_name: Optional[str],
+        last_name: Optional[str],
     ) -> None:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        cur.execute(
-            """
-            INSERT INTO user_profiles(id, username, first_name, last_name)
-            VALUES(?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                username = excluded.username,
-                first_name = excluded.first_name,
-                last_name = excluded.last_name
-            """,
-            (id, username, first_name, last_name),
-        )
-        con.commit()
-        con.close()
+        async with aiosqlite.connect(self.path) as con:
+            await con.execute(
+                """
+                INSERT INTO user_profiles(id, username, first_name, last_name)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    username = excluded.username,
+                    first_name = excluded.first_name,
+                    last_name = excluded.last_name
+                """,
+                (id, username, first_name, last_name),
+            )
+            await con.commit()
 
-    def get_user_profile(self, id: int):
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        cur.execute("SELECT username, first_name, last_name FROM user_profiles WHERE id = ?", (id,))
-        row = cur.fetchone()
-        con.close()
-        if not row:
-            return None
-        return {
-            "username": row[0],
-            "first_name": row[1],
-            "last_name": row[2],
-        }
+    async def get_user_profile(self, id: int):
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("SELECT username, first_name, last_name FROM user_profiles WHERE id = ?", (id,))
+            row = await cur.fetchone()
+            if not row:
+                return None
+            return {
+                "username": row[0],
+                "first_name": row[1],
+                "last_name": row[2],
+            }
 
-    def remove_user(self, id: int) -> bool:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        cur.execute("DELETE FROM allowed_users WHERE id = ?", (id,))
-        con.commit()
-        changed = cur.rowcount > 0
-        con.close()
-        return changed
+    async def remove_user(self, id: int) -> bool:
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("DELETE FROM allowed_users WHERE id = ?", (id,))
+            await con.commit()
+            return cur.rowcount > 0
 
-    def add_group(self, id: int) -> bool:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        try:
-            cur.execute("INSERT OR IGNORE INTO allowed_groups(id) VALUES(?)", (id,))
-            con.commit()
-            changed = cur.rowcount > 0
-        finally:
-            con.close()
-        return changed
+    async def add_group(self, id: int) -> bool:
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("INSERT OR IGNORE INTO allowed_groups(id) VALUES(?)", (id,))
+            await con.commit()
+            return cur.rowcount > 0
 
-    def remove_group(self, id: int) -> bool:
-        con = sqlite3.connect(self.path)
-        cur = con.cursor()
-        cur.execute("DELETE FROM allowed_groups WHERE id = ?", (id,))
-        con.commit()
-        changed = cur.rowcount > 0
-        con.close()
-        return changed
+    async def remove_group(self, id: int) -> bool:
+        async with aiosqlite.connect(self.path) as con:
+            cur = await con.execute("DELETE FROM allowed_groups WHERE id = ?", (id,))
+            await con.commit()
+            return cur.rowcount > 0

@@ -20,7 +20,7 @@ def is_admin(user_id: Optional[int], admins: list[int]) -> bool:
     return user_id is not None and user_id in admins
 
 
-def is_allowed(event: Union[Message, CallbackQuery], storage: Storage, admins: list[int]) -> bool:
+async def is_allowed(event: Union[Message, CallbackQuery], storage: Storage, admins: list[int]) -> bool:
     if isinstance(event, Message):
         user_id = event.from_user.id if event.from_user else None
         chat_id = event.chat.id
@@ -31,14 +31,16 @@ def is_allowed(event: Union[Message, CallbackQuery], storage: Storage, admins: l
         chat_type = event.message.chat.type
     else:
         return False
-    
+
     if is_admin(user_id, admins):
         return True
 
     if chat_type in {"group", "supergroup"}:
-        return chat_id in storage.list_groups()
+        groups = await storage.list_groups()
+        return chat_id in groups
 
-    return user_id in storage.list_users()
+    users = await storage.list_users()
+    return user_id in users
 
 
 def register_message_handlers(
@@ -47,6 +49,26 @@ def register_message_handlers(
     storage: Storage,
     admins: list[int],
 ) -> None:
+    async def _show_formats_for_url(message: Message, url: str) -> Optional[str]:
+        status_msg = await message.answer("⏳ Fetching video formats...")
+        formats = await service.get_video_formats(url)
+        if not formats:
+            await status_msg.edit_text("❌ Could not fetch formats or no video formats available")
+            return None
+        url_id = str(uuid.uuid4())[:8]
+        _url_cache[url_id] = url
+        buttons = []
+        for fmt in formats:
+            height = fmt["height"]
+            fps = fmt.get("fps", 30)
+            format_id = fmt["format_id"]
+            button_text = f"📹 {height}p@{fps}fps"
+            button_data = f"fmt_video:{url_id}:{format_id}"
+            buttons.append([InlineKeyboardButton(text=button_text, callback_data=button_data)])
+        buttons.append([InlineKeyboardButton(text="🎵 Audio (MP3)", callback_data=f"fmt_audio:{url_id}:mp3")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        await status_msg.edit_text("📥 Choose quality:", reply_markup=kb)
+        return url_id
     @router.message(Command("start"))
     async def start_handler(message: Message):
         await message.answer(
@@ -67,46 +89,18 @@ def register_message_handlers(
 
     @router.message(Command("dlp"))
     async def dlp_handler(message: Message):
-        if not is_allowed(message, storage, admins):
+        if not await is_allowed(message, storage, admins):
             return
         parts = message.text.split(maxsplit=1) if message.text else []
         if len(parts) < 2 or not parts[1].strip():
             await message.answer("📹 Usage: `/dlp <url>`", parse_mode="Markdown")
             return
         url = parts[1].strip()
-        
-        # Show loading message
-        status_msg = await message.answer("⏳ Fetching video formats...")
-        
-        # Get available formats
-        formats = await service.get_video_formats(url)
-        if not formats:
-            await status_msg.edit_text("❌ Could not fetch formats or no video formats available")
-            return
-        
-        # Store URL in cache
-        url_id = str(uuid.uuid4())[:8]
-        _url_cache[url_id] = url
-        
-        # Create buttons for each quality
-        buttons = []
-        for fmt in formats:
-            height = fmt["height"]
-            fps = fmt.get("fps", 30)
-            format_id = fmt["format_id"]
-            button_text = f"📹 {height}p@{fps}fps"
-            button_data = f"fmt_video:{url_id}:{format_id}"
-            buttons.append([InlineKeyboardButton(text=button_text, callback_data=button_data)])
-        
-        # Add audio option
-        buttons.append([InlineKeyboardButton(text="🎵 Audio (MP3)", callback_data=f"fmt_audio:{url_id}:mp3")])
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await status_msg.edit_text("📥 Choose quality:", reply_markup=kb)
+        await _show_formats_for_url(message, url)
 
     @router.callback_query(F.data.startswith("fmt_"))
     async def format_callback(callback: CallbackQuery):
-        if not is_allowed(callback, storage, admins):
+        if not await is_allowed(callback, storage, admins):
             await callback.answer("❌ Access denied", show_alert=True)
             return
         
@@ -141,7 +135,7 @@ def register_message_handlers(
 
     @router.message(Command("dlpcancel"))
     async def cancel_handler(message: Message):
-        if not is_allowed(message, storage, admins):
+        if not await is_allowed(message, storage, admins):
             return
         if await service.cancel_current(message.chat.id):
             await message.answer("❌ Download cancelled")
@@ -161,7 +155,7 @@ def register_message_handlers(
         except ValueError:
             await message.answer("👤 Usage: `/adduser {id}`", parse_mode="Markdown")
             return
-        added = storage.add_user(user_id)
+        added = await storage.add_user(user_id)
         await message.answer(f"✅ User `{user_id}` added" if added else f"ℹ️ User `{user_id}` already in list", parse_mode="Markdown")
 
     @router.message(Command("removeuser"))
@@ -177,7 +171,7 @@ def register_message_handlers(
         except ValueError:
             await message.answer("👤 Usage: `/removeuser {id}`", parse_mode="Markdown")
             return
-        removed = storage.remove_user(user_id)
+        removed = await storage.remove_user(user_id)
         await message.answer(f"✅ User `{user_id}` removed" if removed else f"❌ User `{user_id}` not found", parse_mode="Markdown")
 
     @router.message(Command("addgroup"))
@@ -193,7 +187,7 @@ def register_message_handlers(
         except ValueError:
             await message.answer("👥 Usage: `/addgroup {id}`", parse_mode="Markdown")
             return
-        added = storage.add_group(group_id)
+        added = await storage.add_group(group_id)
         await message.answer(f"✅ Group `{group_id}` added" if added else f"ℹ️ Group `{group_id}` already in list", parse_mode="Markdown")
 
     @router.message(Command("removegroup"))
@@ -209,42 +203,14 @@ def register_message_handlers(
         except ValueError:
             await message.answer("👥 Usage: `/removegroup {id}`", parse_mode="Markdown")
             return
-        removed = storage.remove_group(group_id)
+        removed = await storage.remove_group(group_id)
         await message.answer(f"✅ Group `{group_id}` removed" if removed else f"❌ Group `{group_id}` not found", parse_mode="Markdown")
 
     @router.message(F.text)
     async def text_url_handler(message: Message):
-        if not is_allowed(message, storage, admins):
+        if not await is_allowed(message, storage, admins):
             return
         text = message.text.strip() if message.text else ""
         if not text or text.startswith(("/", "!")):
             return
-        
-        # Show loading message
-        status_msg = await message.answer("⏳ Fetching video formats...")
-        
-        # Get available formats
-        formats = await service.get_video_formats(text)
-        if not formats:
-            await status_msg.edit_text("❌ Could not fetch formats or no video formats available")
-            return
-        
-        # Store URL in cache
-        url_id = str(uuid.uuid4())[:8]
-        _url_cache[url_id] = text
-        
-        # Create buttons for each quality
-        buttons = []
-        for fmt in formats:
-            height = fmt["height"]
-            fps = fmt.get("fps", 30)
-            format_id = fmt["format_id"]
-            button_text = f"📹 {height}p@{fps}fps"
-            button_data = f"fmt_video:{url_id}:{format_id}"
-            buttons.append([InlineKeyboardButton(text=button_text, callback_data=button_data)])
-        
-        # Add audio option
-        buttons.append([InlineKeyboardButton(text="🎵 Audio (MP3)", callback_data=f"fmt_audio:{url_id}:mp3")])
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await status_msg.edit_text("📥 Choose quality:", reply_markup=kb)
+        await _show_formats_for_url(message, text)
