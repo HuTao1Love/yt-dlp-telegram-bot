@@ -9,7 +9,6 @@ class Storage:
     def __init__(self, path: str = "data/allowed_ids.db"):
         self.path = path
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        # ensure tables exist (fast, done synchronously)
         self._init_db()
 
     def _init_db(self):

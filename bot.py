@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 from typing import Optional
@@ -43,6 +44,11 @@ def load_dotenv(path: str = ".env", override: bool = False) -> None:
 
 
 async def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+
     load_dotenv()
     bot_token = os.environ.get("BOT_TOKEN", "")
     admin_user_ids = os.environ.get("ADMIN_USERIDS", "")

@@ -121,14 +121,20 @@ def register_message_handlers(
             fmt=fmt,
             format_id=format_id
         )
-        await service.enqueue(entry)
+        queue_position = await service.enqueue(entry)
         
         if fmt == "audio":
-            status_text = "✅ Audio added to queue"
+            selected_format = "audio (mp3)"
         elif format_id:
-            status_text = f"✅ Video added to queue"
+            selected_format = f"video format {format_id}"
         else:
-            status_text = "✅ Added to queue"
+            selected_format = fmt
+
+        status_text = (
+            "✅ Added to queue\n"
+            f"ℹ️ Selected: {selected_format}\n"
+            f"📍 Queue position: {queue_position}"
+        )
         
         await callback.message.edit_text(status_text)
         await callback.answer()
