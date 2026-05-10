@@ -12,7 +12,21 @@ class Storage:
     def _init_db(self):
         con = sqlite3.connect(self.path)
         cur = con.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS allowed_users(id INTEGER PRIMARY KEY)")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS allowed_users(id INTEGER PRIMARY KEY)
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profiles(
+                id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT
+            )
+            """
+        )
         cur.execute("CREATE TABLE IF NOT EXISTS allowed_groups(id INTEGER PRIMARY KEY)")
         con.commit()
         con.close()
@@ -43,6 +57,43 @@ class Storage:
         finally:
             con.close()
         return changed
+
+    def upsert_user_profile(
+        self,
+        id: int,
+        username: str | None,
+        first_name: str | None,
+        last_name: str | None,
+    ) -> None:
+        con = sqlite3.connect(self.path)
+        cur = con.cursor()
+        cur.execute(
+            """
+            INSERT INTO user_profiles(id, username, first_name, last_name)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                username = excluded.username,
+                first_name = excluded.first_name,
+                last_name = excluded.last_name
+            """,
+            (id, username, first_name, last_name),
+        )
+        con.commit()
+        con.close()
+
+    def get_user_profile(self, id: int):
+        con = sqlite3.connect(self.path)
+        cur = con.cursor()
+        cur.execute("SELECT username, first_name, last_name FROM user_profiles WHERE id = ?", (id,))
+        row = cur.fetchone()
+        con.close()
+        if not row:
+            return None
+        return {
+            "username": row[0],
+            "first_name": row[1],
+            "last_name": row[2],
+        }
 
     def remove_user(self, id: int) -> bool:
         con = sqlite3.connect(self.path)
